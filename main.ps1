@@ -5,7 +5,7 @@ function Start-Checks {
     Set-Location $PSScriptRoot #Set working directory to a controlled area
     try {
         Import-Module -Name "PSSQLite"
-        Import-Module -Name "ActiveDirectory"
+        #Import-Module -Name "ActiveDirectory"
     } catch {
         $ErrorOut = Get-Module -ListAvailable | Select-Object Name,Version
         Write-Verbose "Available Modules:"
@@ -13,16 +13,16 @@ function Start-Checks {
         throw "Required module missing, check installation of PSSQLite and RSAT Active Directory"
     }
 
-    $script:db = ".\data6.db"
+    $script:db = ".\data.db"
 
     if ( -not ( Test-Path -Path $script:db -ErrorAction SilentlyContinue ) ) {
         Write-Verbose "No database file found, creating"
 
         #Make the basic structure of the DB if it does not exist.
         $SetupTransaction = 'BEGIN TRANSACTION;
-        CREATE TABLE IF NOT EXISTS "In" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));
-        CREATE TABLE IF NOT EXISTS "Success" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS "Error" ( "Id"	INTEGER NOT NULL, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	TEXT );
+        CREATE TABLE IF NOT EXISTS "In" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "DateCreated"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));
+        CREATE TABLE IF NOT EXISTS "Success" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "DateCreated"	TEXT NOT NULL, "DateActioned"	TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS "Error" ( "Id"	INTEGER NOT NULL, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	TEXT, "DateCreated"	TEXT NOT NULL, "DateActioned"	TEXT NOT NULL);
         COMMIT;'
         .\sqlite3.exe $script:db $SetupTransaction
     }
@@ -40,6 +40,7 @@ function Start-Checks {
     CREATE TABLE IF NOT EXISTS "Packages" ( "Id"	INTEGER NOT NULL UNIQUE, "Name"	TEXT NOT NULL, "Method"	TEXT NOT NULL, "Assignment"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));'
     #Loops through each line in the csv and creates the insert statement to use in the transaction
     for ($i = 0;$i -lt $TestPackagesCsv.Count;$i++) {
+        #This could probably be neater but oh well
         $ImportTablePackagesData = $ImportTablePackagesData + " INSERT INTO 'Packages' ('Name','Method','Assignment') VALUES ('$($TestPackagesCsv[$i].Name -replace '[\W]','')','$($TestPackagesCsv[$i].Method -replace '[\W]','')','$($TestPackagesCsv[$i].Assignment -replace '[\W]','')');"
     }
     $ImportTablePackagesData = $ImportTablePackagesData + "COMMIT;"
@@ -48,12 +49,47 @@ function Start-Checks {
     .\sqlite3.exe $script:db $ImportTablePackagesData
 }
 
-function Invoke-Runtime {
-    for (;;) {
-        Start-Sleep -seconds 10 #Don't want this running permanently eating up all resources, hard set to 10s right now for testing, planned to allow configuration
-        
-        $GetTableIn = ''
+function Get-TableContents {
+    param( [Parameter(Mandatory=$true, ValueFromPipeline=$false)][string]$Table)
+
+    switch ($Table) {
+         "In" { $Header = 'Id','Device','Package','TaskRef','DateCreated' }
+         "Packages" { $Header = 'Id','Name','Method','Assignment' }
+        Default { throw "Table Ref invalid: Unknown table provided: $Table" }
+    }
+
+    $GetTable = "BEGIN TRANSACTION;
+        SELECT * FROM '$Table';
+        COMMIT;"
+
+    $GetTable > .\tempworkingtable.csv
+    $Output = Import-Csv -Path .\tempworkingtable.csv -Header $Header -Delimiter "`|"
+
+    Remove-Item -Path .\tempworkingtable.csv -Force
+
+    return $Output
+}
+
+function Invoke-Runtime {        
+    $ToProcess = Get-TableContents -Table "In"
+
+    $LivePackages = Get-TableContents -Table "Packages"
+
+    foreach ( $ToProcessObject in $ToProcessObjects ) {
+
+        $Package = $LivePackages | Where-Object { $_.Name -eq $ToProcessObject.Package }
+
+        switch ( $ToProcessObject. ) {
+            "" {}
+            Default { Throw "Unknown delivery system, review Packages.csv" }
+
+        }
     }
 }
 
+
 Start-Checks
+for (;;){
+    Start-Sleep -Seconds 10
+    Invoke-Runtime
+}
