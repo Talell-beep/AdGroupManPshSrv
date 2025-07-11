@@ -1,0 +1,6 @@
+#Ignore
+*.dll
+*.def
+*.db
+*.exe
+*.csv
