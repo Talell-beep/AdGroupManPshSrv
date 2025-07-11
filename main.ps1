@@ -5,7 +5,7 @@ function Start-Checks {
     Set-Location $PSScriptRoot #Set working directory to a controlled area
     try {
         Import-Module -Name "PSSQLite"
-        Import-Module -Name "ActiveDirectory"
+        #Import-Module -Name "ActiveDirectory"
     } catch {
         $ErrorOut = Get-Module -ListAvailable | Select-Object Name,Version
         throw "Required module missing, check installation of PSSQLite and RSAT Active Directory"
@@ -13,18 +13,18 @@ function Start-Checks {
         Write-Verbose $ErrorOut
     }
 
-    $db = ".\data.db"
-    if ( -not ( Test-Path -Path $db -ErrorAction SilentlyContinue ) ) {
+    $script:db = ".\data6.db"
+
+    if ( -not ( Test-Path -Path $script:db -ErrorAction SilentlyContinue ) ) {
         Write-Verbose "No database file found, creating"
 
-        $SetupTableIn = 'CREATE TABLE IF NOT EXISTS "In" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL);'
-        .\sqlite3.exe data.db $SetupTableIn
-        $SetupTableDone = 'CREATE TABLE IF NOT EXISTS "Success" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	INTEGER NOT NULL);'
-        .\sqlite3.exe data.db $SetupTableDone
-        $SetupTableError = 'CREATE TABLE IF NOT EXISTS "Error" ( "Id"	INTEGER NOT NULL, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	TEXT );'
-        .\sqlite3.exe data.db $SetupTableError
-        $SetupTablePackages = 'CREATE TABLE IF NOTE EXISTS "Packages" ( "Id"	INTEGER NOT NULL UNIQUE, "Name"	TEXT NOT NULL, "Method"	TEXT NOT NULL, "Assignment"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));'
-        .\sqlite3.exe data.db $SetupTablePackages
+        #Make the basic structure of the DB if it does not exist.
+        $SetupTransaction = 'BEGIN TRANSACTION;
+        CREATE TABLE IF NOT EXISTS "In" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));
+        CREATE TABLE IF NOT EXISTS "Success" ( "Id"	INTEGER NOT NULL UNIQUE, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS "Error" ( "Id"	INTEGER NOT NULL, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	TEXT );
+        COMMIT;'
+        .\sqlite3.exe $script:db $SetupTransaction
     }
 
     #Check if packages file exists
@@ -34,10 +34,17 @@ function Start-Checks {
     if ( $null -eq $TestPackagesCsv.Name -or $null -eq $TestPackagesCsv.Group -or $null -eq $TestPackagesCsv.Method ) { throw "Invalid Packages.csv, review content" }
 
     #Create the SQL query to bulk input the packages data into the db, this should happen every time the service is started
-    $ImportTablePackagesData = "BEGIN TRANSACTION;"
-    for ($i = 0;$i -lt $TestPackagesCsv.Count;$i++) {$ImportTablePackagesData = $ImportTablePackagesData + " INSERT INTO 'Packages' ('Name','Method','Assignment') VALUES ('$($TestPackagesCsv[$i].Name)','$($TestPackagesCsv[$i].Method)','$($TestPackagesCsv[$i].Assignment)');"}
+    #Drop packages table to cleanly have a fresh table to ingest the packages.csv into
+    $ImportTablePackagesData = 'BEGIN TRANSACTION;
+    DROP TABLE IF EXISTS Packages;
+    CREATE TABLE IF NOT EXISTS "Packages" ( "Id"	INTEGER NOT NULL UNIQUE, "Name"	TEXT NOT NULL, "Method"	TEXT NOT NULL, "Assignment"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));'
+    #Loops through each line in the csv and creates the insert statement to use in the transaction
+    for ($i = 0;$i -lt $TestPackagesCsv.Count;$i++) {
+        $ImportTablePackagesData = $ImportTablePackagesData + " INSERT INTO 'Packages' ('Name','Method','Assignment') VALUES ('$($TestPackagesCsv[$i].Name)','$($TestPackagesCsv[$i].Method)','$($TestPackagesCsv[$i].Assignment)');"
+    }
     $ImportTablePackagesData = $ImportTablePackagesData + "COMMIT;"
 
     #Import the horrible mess I have generated
-    .\sqlite3.exe data.db $ImportTablePackagesData
+    .\sqlite3.exe $script:db $ImportTablePackagesData
 }
+Start-Checks
