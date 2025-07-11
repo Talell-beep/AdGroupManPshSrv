@@ -24,13 +24,13 @@ function Start-Checks {
         $SetupTableError = 'CREATE TABLE IF NOT EXISTS "Error" ( "Id"	INTEGER NOT NULL, "Device"	TEXT NOT NULL, "Package"	TEXT NOT NULL, "TaskRef"	TEXT NOT NULL, "Output"	TEXT );'
         .\sqlite3.exe data.db $SetupTableError
         $SetupTablePackages = 'CREATE TABLE IF NOTE EXISTS "Packages" ( "Id"	INTEGER NOT NULL UNIQUE, "Name"	TEXT NOT NULL, "Method"	TEXT NOT NULL, "Assignment"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));'
-        .\sqlite3.exe data1.db $SetupTablePackages
+        .\sqlite3.exe data.db $SetupTablePackages
     }
 
     #Check if packages file exists
     Write-Verbose "Checking Packages.csv"
     if ( -not ( Test-Path .\Packages.csv ) ) { throw "No Packages.csv in programs root directory. This must be supplied"}
-    $TestPackagesCsv = Import-Csv -Path ".\TestPackages.csv"
+    $TestPackagesCsv = Import-Csv -Path ".\Packages.csv"
     if ( $null -eq $TestPackagesCsv.Name -or $null -eq $TestPackagesCsv.Group -or $null -eq $TestPackagesCsv.Method ) { throw "Invalid Packages.csv, review content" }
 
     #Create the SQL query to bulk input the packages data into the db, this should happen every time the service is started
@@ -39,5 +39,5 @@ function Start-Checks {
     $ImportTablePackagesData = $ImportTablePackagesData + "COMMIT;"
 
     #Import the horrible mess I have generated
-    .\sqlite3.exe data1.db $ImportTablePackagesData
+    .\sqlite3.exe data.db $ImportTablePackagesData
 }
