@@ -5,12 +5,12 @@ function Start-Checks {
     Set-Location $PSScriptRoot #Set working directory to a controlled area
     try {
         Import-Module -Name "PSSQLite"
-        #Import-Module -Name "ActiveDirectory"
+        Import-Module -Name "ActiveDirectory"
     } catch {
         $ErrorOut = Get-Module -ListAvailable | Select-Object Name,Version
-        throw "Required module missing, check installation of PSSQLite and RSAT Active Directory"
         Write-Verbose "Available Modules:"
         Write-Verbose $ErrorOut
+        throw "Required module missing, check installation of PSSQLite and RSAT Active Directory"
     }
 
     $script:db = ".\data6.db"
@@ -40,11 +40,20 @@ function Start-Checks {
     CREATE TABLE IF NOT EXISTS "Packages" ( "Id"	INTEGER NOT NULL UNIQUE, "Name"	TEXT NOT NULL, "Method"	TEXT NOT NULL, "Assignment"	TEXT NOT NULL, PRIMARY KEY("Id" AUTOINCREMENT));'
     #Loops through each line in the csv and creates the insert statement to use in the transaction
     for ($i = 0;$i -lt $TestPackagesCsv.Count;$i++) {
-        $ImportTablePackagesData = $ImportTablePackagesData + " INSERT INTO 'Packages' ('Name','Method','Assignment') VALUES ('$($TestPackagesCsv[$i].Name)','$($TestPackagesCsv[$i].Method)','$($TestPackagesCsv[$i].Assignment)');"
+        $ImportTablePackagesData = $ImportTablePackagesData + " INSERT INTO 'Packages' ('Name','Method','Assignment') VALUES ('$($TestPackagesCsv[$i].Name -replace '[\W]','')','$($TestPackagesCsv[$i].Method -replace '[\W]','')','$($TestPackagesCsv[$i].Assignment -replace '[\W]','')');"
     }
     $ImportTablePackagesData = $ImportTablePackagesData + "COMMIT;"
 
     #Import the horrible mess I have generated
     .\sqlite3.exe $script:db $ImportTablePackagesData
 }
+
+function Invoke-Runtime {
+    for (;;) {
+        Start-Sleep -seconds 10 #Don't want this running permanently eating up all resources, hard set to 10s right now for testing, planned to allow configuration
+        
+        $GetTableIn = ''
+    }
+}
+
 Start-Checks
