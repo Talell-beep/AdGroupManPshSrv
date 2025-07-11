@@ -55,6 +55,7 @@ function Get-TableContents {
     switch ($Table) {
          "In" { $Header = 'Id','Device','Package','TaskRef','DateCreated' }
          "Packages" { $Header = 'Id','Name','Method','Assignment' }
+         "WorkingTable" { $Header =  'Id','Device','TaskRef','DateCreated', 'Method', 'Assignment' }
         Default { throw "Table Ref invalid: Unknown table provided: $Table" }
     }
 
@@ -62,25 +63,44 @@ function Get-TableContents {
         SELECT * FROM '$Table';
         COMMIT;"
 
-    $GetTable > .\tempworkingtable.csv
-    $Output = Import-Csv -Path .\tempworkingtable.csv -Header $Header -Delimiter "`|"
+    #Export it as a csv then reimport it as a dirty way to make it an object
+    $TempCsv = ".\TempCsv.csv"
+    $GetTable > $TempCsv
+    $Output = Import-Csv -Path $TempCsv -Header $Header -Delimiter "`|"
 
-    Remove-Item -Path .\tempworkingtable.csv -Force
+    Remove-Item -Path $TempCsv -Force
 
     return $Output
 }
 
 function Invoke-Runtime {        
-    $ToProcess = Get-TableContents -Table "In"
+    #Left join the tables to save processing in script as the data is right there. Could use a view but eh.
+    $CreateWorkingTable = 'START TRANSACTION;
+    DROP TABLE IF EXISTS WorkingTable;
+    CREATE TABLE WorkingTable AS
+        SELECT 
+            L.Id, 
+            L.Device, 
+            L.TaskRef, 
+            L.DateCreated, 
+            P.Method, 
+            P.Assignment
+        FROM "In" L
+        LEFT JOIN Packages P ON P.Name = L.Package;
+        COMMIT;'
+    
+    .\sqlite3.exe $Script:db $CreateWorkingTable
 
-    $LivePackages = Get-TableContents -Table "Packages"
+    $ToProcess = Get-TableContents -Table WorkingTable
 
-    foreach ( $ToProcessObject in $ToProcessObjects ) {
+    #Set up the output Transaction
+    $EndingTransaction = "BEGIN TRANSACTION;"
 
-        $Package = $LivePackages | Where-Object { $_.Name -eq $ToProcessObject.Package }
+    foreach ( $ToProcessObject in $ToProcess ) {
 
         switch ( $ToProcessObject. ) {
-            "" {}
+            "AD" { Add-AdGroupMember -Identity $ToProcessObject.Assignment -Member $ToProcessObject.Device -Confirm:$false }
+            "SCCM" { (Get-CMDevice -Name $ToProcessObject.Device). | Add-CMDevice }
             Default { Throw "Unknown delivery system, review Packages.csv" }
 
         }
